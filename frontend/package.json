@@ -29,7 +29,7 @@
     "postcss": "^8.5.23",
     "sass": "^1.97.3",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.1.6",
+    "vite": "^8.2.4",
     "vite-plugin-vue-devtools": "^8.0.5"
   },
   "engines": {
