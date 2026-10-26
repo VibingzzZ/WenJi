@@ -10,7 +10,7 @@ claude.md
 *.iml
 *.iws
 
-.docx/
+.docs/
 
 # ================= Backend (Java/Maven) =================
 backend/target/
@@ -25,3 +25,6 @@ frontend/.env.local
 node_modules
 
 
+
+# ================= WorkBuddy 工作区记忆（不提交）=================
+.workbuddy/

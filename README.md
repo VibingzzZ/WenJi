@@ -6,6 +6,7 @@
 ![Version](https://img.shields.io/badge/version-1.0.0--beta-blue)
 ![Vue](https://img.shields.io/badge/Vue-3.5-brightgreen)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen)
+![JDK](https://img.shields.io/badge/JDK-21-orange)
 ![LangChain4j](https://img.shields.io/badge/LangChain4j-1.0.1--beta6-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -42,7 +43,7 @@
 | 🤖 AI 对话 | 智能对话 / 流式输出 / 多模态 | SSE 流式响应，支持文本+图片多模态输入 |
 | 📚 RAG 检索 | 知识库问答 / 文档入库 | Redis 向量存储非遗知识，语义检索增强回答 |
 | 👤 用户系统 | 登录注册 / 个人中心 | 手机号验证码登录，经验值/等级/徽章管理 |
-| 📝 游记系统 | 发布游记 / 分布式锁防刷 | 记录文化探索心得，Redis 分布式锁防止频繁发布 |
+| 📝 游记系统 | 发布游记 / 幂等防重 | 记录文化探索心得，唯一索引 + 原子更新保证积分不重不漏 |
 
 ---
 
@@ -52,7 +53,7 @@
 
 | 软件 | 版本要求 |
 |------|---------|
-| JDK | 17+ |
+| JDK | 21+ |
 | MySQL | 8.0+ |
 | Redis | 7.x（需支持向量搜索） |
 | Node.js | 20.0+（前端开发） |
@@ -109,55 +110,69 @@ npm run dev
 
 ## API 接口
 
+> 除标注「公开」外，所有接口需在请求头携带 `Authorization: Bearer <token>`。
+
 ### 用户模块 `/user`
 
 | 方法 | 路径 | 说明 | 认证 |
 |------|------|------|------|
-| POST | `/user/login` | 手机号登录 | ❌ |
-| POST | `/user/register` | 用户注册 | ❌ |
-| GET | `/user/captcha` | 获取图形验证码 | ❌ |
-| GET | `/user/info` | 获取当前用户信息 | ✅ |
-| PUT | `/user/update` | 更新用户信息 | ✅ |
-| DELETE | `/user/deleteUserInfo` | 注销账户 | ✅ |
+| GET | `/user/captcha` | 获取图形验证码 | 公开 |
+| POST | `/user/login` | 登录（用户不存在时自动注册） | 公开 |
+| POST | `/user/logout` | 退出登录（清除 Redis 白名单） | 必需 |
+| GET | `/user/currentUserInfo` | 获取当前用户信息 | 必需 |
+| PUT | `/user/updateUserInfo` | 更新用户信息 | 必需 |
+| DELETE | `/user/deleteUserInfo` | 注销账户 | 必需 |
 
-### AI 聊天模块 `/ai`
+### AI 对话 `/user/ai`
 
-| 方法 | 路径 | 说明 | 认证 | 特性 |
-|------|------|------|------|------|
-| POST | `/ai/chat` | AI 对话（支持流式） | ✅ | SSE 流式、多模态、记忆管理 |
-| GET | `/ai/history` | 获取历史会话列表 | ✅ | Redis 缓存加速 |
-| DELETE | `/ai/history/{sessionId}` | 删除指定会话 | ✅ | 双删策略 |
+| 方法 | 路径 | 说明 | 特性 |
+|------|------|------|------|
+| POST | `/user/ai/chat` | AI 对话 | SSE 流式、RAG 增强、多模态 |
 
-**`POST /ai/chat` 参数：**
+**参数：**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | prompt | String | ✅ | 用户问题 |
 | chatId | String | ❌ | 会话 ID（不传则新建） |
-| images | MultipartFile[] | ❌ | 图片文件（多模态） |
+| images | MultipartFile[] | ❌ | 图片文件（传图时走多模态分支） |
 
-**响应格式：SSE 流**
+**响应：`text/event-stream`，每个分片是一个纯文本片段**
+
 ```
-data: {"content": "你好"}
-data: {"content": "！"}
-data: [DONE]
+data: 景泰蓝又称
+data: 铜胎掐丝珐琅
+data: ，制作需经六道工序
 ```
 
-### 景点模块 `/heritage`
+### 会话历史 `/ai/history`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/heritage/list` | 获取景点列表 |
-| GET | `/heritage/{siteId}` | 获取景点详情 |
-| GET | `/heritage/images/{siteId}` | 获取景点图片 |
+| GET | `/ai/history/{type}/list` | 会话列表（type 目前为 `chat`） |
+| GET | `/ai/history/{type}/{sessionId}` | 指定会话的消息详情 |
+| DELETE | `/ai/history/session/{sessionId}` | 删除会话（Redis + MySQL 双删） |
 
-### 游记模块 `/blog`
+### 景点地图 `/map`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/map/initial?lng={经度}&lat={纬度}` | 获取附近景点 |
+| GET | `/map/{id}` | 景点详情 |
+
+### 游记 `/travel`
 
 | 方法 | 路径 | 说明 | 特性 |
 |------|------|------|------|
-| POST | `/blog/publish` | 发布游记 | Redis 分布式锁防刷 |
-| GET | `/blog/my` | 我的游记列表 |
-| DELETE | `/blog/{blogId}` | 删除游记 |
+| POST | `/travel/publish` | 发布游记 | 唯一索引防重 + 原子积分更新 |
+| GET | `/travel/myBlogs` | 我的游记列表 | — |
+| DELETE | `/travel/delete/{blogId}` | 删除游记 | 校验归属 |
+
+### 徽章 `/badge`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/badge/myBadges` | 当前用户已获得的徽章 |
 
 ### RAG 知识库 `/admin/rag`
 
@@ -165,14 +180,13 @@ data: [DONE]
 |------|------|------|
 | POST | `/admin/rag/ingest` | 单条知识入库 |
 | POST | `/admin/rag/batch-ingest` | 批量导入示例知识 |
-| POST | `/admin/rag/import-from-file` | 从文件导入（开发中） |
+| POST | `/admin/rag/import-from-file` | 从文件导入（未实现） |
 
-### 公共模块
+### 文件 `/common`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/common/upload` | 文件上传 |
-| GET | `/common/download/{filename}` | 文件下载 |
 
 ---
 
@@ -237,73 +251,62 @@ langchain4j:
 ```
 WenJi/
 ├── backend/
-│   └── src/main/java/com/example/
-│       ├── Controller/              # 控制器层 (10个)
-│       │   ├── ChatController.java          # AI 聊天 (SSE流式)
-│       │   ├── ChatHistoryController.java   # 会话历史
-│       │   ├── RagKnowledgeController.java  # RAG 知识库管理
-│       │   ├── CaptchaController.java       # 验证码
-│       │   ├── UserController.java          # 用户管理
-│       │   ├── HeritageController.java      # 景点信息
-│       │   ├── TravelBlogController.java    # 游记管理
-│       │   ├── BadgeController.java         # 徽章管理
-│       │   └── CommonController.java        # 文件上传下载
-│       │
-│       ├── Service/
-│       │   ├── aiService/                   # ⭐ AI 服务层 (核心)
-│       │   │   ├── ConsultantService.java       # @AiService 声明式接口
-│       │   │   ├── RagChatService.java          # RAG 基础检索聊天
-│       │   │   └── RagEnhancedChatService.java  # RAG 增强版(相似度分级)
-│       │   ├── UserService.java
-│       │   ├── TravelBlogService.java
-│       │   ├── SiteService.java
-│       │   ├── BadgeService.java
-│       │   ├── PointService.java
-│       │   ├── FileService.java
-│       │   ├── ChatSessionService.java
-│       │   └── AIChatMessageService.java
-│       │
-│       ├── Repository/
-│       │   ├── RedisChatMemoryStore.java      # Redis 聊天记忆持久化
-│       │   ├── RedisChatMemory.java           # ChatMemory 接口实现
-│       │   └── DatabaseChatHistoryRepository.java  # 数据库归档
-│       │
-│       ├── Config/
-│       │   ├── CommonConfiguration.java       # Langchain4j 核心配置
-│       │   ├── WebConfig.java                 # 拦截器/CORS/静态资源
-│       │   ├── ScheduleConfig.java            # 定时任务线程池
-│       │   ├── MybatisConfig.java
-│       │   ├── LevelConfig.java
-│       │   └── Swagger.java
-│       │
-│       ├── Interceptor/
-│       │   ├── RefreshTokenInterceptor.java   # Token 刷新拦截器
-│       │   └── LoginInterceptor.java          # 登录校验拦截器
-│       │
-│       ├── Pojo/          # 实体类
-│       ├── DTO/           # 数据传输对象
-│       ├── VO/            # 视图对象
-│       ├── Common/
-│       │   ├── Utils/     # 工具类 (ThreadLocal, JWT, Captcha...)
-│       │   └── Constants/ # 常量 (Redis Key, 锁前缀)
-│       └── Exception/     # 全局异常处理
+│   ├── src/main/java/com/example/
+│   │   ├── WenjiApplication.java            # 启动类（@MapperScan com.example.mapper）
+│   │   ├── common/
+│   │   │   ├── CommonConfiguration.java     # LangChain4j Bean 装配（记忆/检索器）
+│   │   │   ├── Result.java · PageResult.java
+│   │   │   ├── constants/RedisConstants.java    # Redis Key、TTL、相似度阈值
+│   │   │   └── utils/                       # JWT / MD5 / 验证码 / ThreadLocal / 向量工具
+│   │   ├── config/                          # Web、MyBatis、定时任务、等级、Swagger
+│   │   ├── controller/                      # 9 个 Controller
+│   │   │   ├── ChatController.java          # AI 对话（SSE）
+│   │   │   ├── ChatHistoryController.java   # 会话历史
+│   │   │   ├── RagKnowledgeController.java  # 知识库入库
+│   │   │   ├── UserController.java · CaptchaController.java
+│   │   │   ├── HeritageController.java      # 景点地图
+│   │   │   ├── TravelBlogController.java    # 游记
+│   │   │   ├── BadgeController.java
+│   │   │   └── CommonController.java        # 文件上传
+│   │   ├── exception/                       # BusinessException + 全局异常处理
+│   │   ├── interceptor/                     # RefreshToken（认证+续期）、Login（准入）
+│   │   ├── mapper/                          # MyBatis-Plus Mapper 接口
+│   │   ├── repository/
+│   │   │   ├── RedisChatMemoryStore.java    # ChatMemoryStore 实现（List 结构）
+│   │   │   ├── RedisChatMemory.java         # 归档侧读取实现
+│   │   │   └── impl/DatabaseChatHistoryRepository.java
+│   │   ├── service/
+│   │   │   ├── aiservice/                   # ⭐ AI 服务层（核心）
+│   │   │   │   ├── ConsultantService.java       # @AiService 声明式接口
+│   │   │   │   ├── RagChatService.java          # 基础检索聊天
+│   │   │   │   └── RagEnhancedChatService.java  # 增强版（相似度分级 + 三层降级）
+│   │   │   └── impl/                        # 业务实现（User/TravelBlog/Point/Badge...）
+│   │   └── po/
+│   │       ├── dto/                         # 入参对象
+│   │       ├── pojo/                        # 数据库实体
+│   │       └── vo/                          # 出参对象
+│   │
+│   ├── src/main/resources/
+│   │   ├── application.yml                  # 主配置
+│   │   ├── application-test.yml
+│   │   ├── System.txt                       # AI 导游人设提示词
+│   │   ├── com/example/mapper/*.xml         # MyBatis XML（namespace 需与接口全限定名一致）
+│   │   └── db/                              # 建表与初始化脚本
+│   │
+│   └── Dockerfile                           # eclipse-temurin:21-jre-alpine
 │
 ├── frontend/src/
-│   ├── views/                        # 页面视图
-│   │   ├── HomeView.vue              # 首页(地图)
-│   │   ├── ArExperienceView.vue      # AR 体验页
-│   │   ├── ProfileView.vue           # 个人中心
-│   │   ├── RewardView.vue            # 徽章奖励
-│   │   └── WelcomeScreen.vue         # 欢迎屏
-│   ├── api/                          # API 请求封装
-│   ├── components/                   # 组件库 (atoms/molecules/organisms)
-│   ├── stores/                       # Pinia 状态管理
-│   └── router/                       # 路由配置
+│   ├── views/                               # HomeView / ArExperience / Profile /
+│   │                                        # Reward / TargetCompiler / WelcomeScreen
+│   ├── api/                                 # 请求封装
+│   ├── components/                          # atoms / molecules / organisms
+│   ├── stores/                              # Pinia
+│   └── router/
 │
-├── docker-compose.yml
-├── LANGCHAIN4J_MIGRATION_PLAN.md     # 迁移方案文档
-├── LANGCHAIN4J_MIGRATION_ISSUE.md    # 迁移 Issue 清单
-└── pom.xml
+├── .github/workflows/                       # CI：后端 Maven 构建 + 前端 Vite 构建
+├── docs/                                    # 设计与复盘文档
+├── docker-compose.yml                       # MySQL + Redis + Backend + Frontend
+└── CLAUDE.md
 ```
 
 ---
@@ -320,11 +323,12 @@ WenJi/
 | **地图服务** | 高德地图 API + Leaflet | - | 地理定位与展示 |
 | **AR 引擎** | MindAR.js + Three.js | - | WebAR 3D 展示 |
 | **后端框架** | Spring Boot | 3.3.5 | RESTful API |
+| **运行时** | OpenJDK | 21 (LTS) | 编译与运行版本 |
 | **AI 引擎** | **LangChain4j** | **1.0.1-beta6** | LLM 集成、RAG、声明式 AI Service |
 | **LLM 模型** | 阿里云通义千问 | qwen-plus / text-embedding-v3 | 对话 + 向量嵌入 |
 | **ORM** | MyBatis-Plus | 3.5.7 | 数据库操作 |
 | **数据库** | MySQL | 8.0 | 业务数据存储 |
-| **缓存** | Redis | 7.x | 缓存 + 向量存储 + 聊天记忆 + 分布式锁 |
+| **缓存** | Redis | 7.x | 缓存 + 向量存储 + 聊天记忆 |
 | **认证** | JWT (jjwt) | 0.11.5 | 无状态认证 |
 | **响应式** | Project Reactor | - | SSE 流式响应 (Flux\<String\>) |
 | **文档** | Knife4j (OpenAPI 3) | 4.5.0 | API 文档 |
@@ -377,8 +381,7 @@ WenJi/
   │ 业务数据  │         │ DB3: 缓存 │          │  LLM 对话    │
   │ 会话/消息 │         │ DB4: 向量 │          │  Embedding   │
   │ 用户/游记 │         │ 聊天记忆  │          │              │
-  └──────────┘         │ 分布式锁  │          └──────────────┘
-                       └──────────┘
+  └──────────┘         └──────────┘          └──────────────┘
 ```
 
 ---
@@ -425,7 +428,6 @@ WenJi/
 |------|----------|----------|
 | **ThreadLocal** | 请求级用户上下文传递 | `ThreadLocalUtil.java` |
 | **线程池** | 定时任务独立执行 | `ScheduleConfig.java` (5线程守护线程池) |
-| **分布式锁** | 防止用户频繁发布游记 | `TravelBlogServiceImpl.java` (Redis SETNX) |
 | **CountDownLatch** | 并发测试协调 | `TravelBlogTest.java` |
 | **AtomicInteger** | 并发计数统计 | `TravelBlogTest.java` |
 | **Reactor Flux** | AI 流式响应 (SSE) | `ChatController.java` |
@@ -482,9 +484,10 @@ curl -X POST "http://localhost:8080/admin/rag/ingest?content=xxx&title=xxx&sourc
 | 项目 | 信息 |
 |------|------|
 | 版本号 | v1.0.0-beta |
+| 运行时 | OpenJDK 21 (LTS) |
 | AI 框架 | Spring AI 1.0.0-M6 → **LangChain4j 1.0.1-beta6** |
 | LLM | 阿里云通义千问 (qwen-plus) |
-| 更新日期 | 2026-04-22 |
+| 更新日期 | 2026-10-26 |
 
 ---
 
