@@ -1,4 +1,3 @@
-
 services:
   mysql:
     image: mysql:8.0
@@ -44,25 +43,29 @@ services:
       dockerfile: Dockerfile
     container_name: wenji-backend
     restart: unless-stopped
-    depends_on:
+    depends_on: # 保证Mysql和Redis先启动
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      SPRING_PROFILES_ACTIVE: docker
+    environment: # 把数据库连接信息换成mysql和redis的连接信息
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/wenji?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true&connectionCollation=utf8mb4_unicode_ci
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: 123456
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: 6379
       SPRING_REDIS_PASSWORD: 123321
-      OPENAI_API_KEY: ${QWEN-API-KEY}
-    volumes:
+      # LangChain4j 向量库是独立配置前缀，必须单独覆盖，否则容器内仍会连 localhost
+      LANGCHAIN4J_COMMUNITY_REDIS_HOST: redis
+      LANGCHAIN4J_COMMUNITY_REDIS_PORT: 6379
+      LANGCHAIN4J_COMMUNITY_REDIS_PASSWORD: 123321
+      # 变量名必须与 application.yml 中 ${QWEN_API_KEY} 占位符一致
+      QWEN_API_KEY: ${QWEN_API_KEY}
+    volumes: # 映射上传文件到容器内
       - uploads_data:/app/uploads
     ports:
       - "8080:8080"
-    networks:
+    networks: # 添加网络，方便容器之间通信
       - wenji-network
 
   frontend:
@@ -73,16 +76,16 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-    ports:
+    ports: # 映射端口
       - "80:80"
     networks:
       - wenji-network
 
-volumes:
+volumes: # 定义数据卷，用于持久化存储
   mysql_data:
   redis_data:
   uploads_data:
 
-networks:
+networks: # 定义网络，用于容器之间的通信，通过名字互相访问
   wenji-network:
     driver: bridge
