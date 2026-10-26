@@ -1,6 +1,8 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+// Tailwind v4：@tailwind base/components/utilities 三条指令已废弃，改为单条 @import。
+// @config 让 v4 继续读取 tailwind.config.js 里的自定义色（tianqing / yuebai / dailan 等），
+// 不写这一行的话 tailwind.config.js 会被完全忽略，自定义色类名全部失效。
+@import "tailwindcss";
+@config "../../tailwind.config.js";
 
 @layer base {
   html {
