@@ -1,0 +1,153 @@
+name: CI
+
+# 触发条件：push 到 main / develop，或向这两个分支发起 PR 时运行
+# 说明：仓库实际有 develop 主开发分支（还有 jy / wyb 等特性分支），原配置只监听 main/master，
+#       而仓库根本没有 master 分支 → 等于 develop 上的日常开发完全没跑过 CI。
+#       特性分支自身的 push 不单独触发，靠 PR 时跑一次，避免重复消耗 runner 额度。
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+# 同一分支连续 push 时，取消上一次还在跑的任务
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 最小权限：本流水线只读代码，不上传 release / 不改仓库内容
+# （upload-artifact 走的是 ACTIONS_RUNTIME_TOKEN，不受这里的限制）
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================
+  # 后端：Maven 构建
+  # ============================================================
+  backend:
+    name: Backend (JDK 21 / Maven)
+    # 钉死 24.04：ubuntu-latest 官方公告将于 2026-11 切换到 Ubuntu 26.04，
+    # 沿用浮动 tag 会在某天突然换掉整套工具链（默认 JDK、npm 等）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 这步不是为了"装 Maven"——runner 镜像本身就自带 Maven（24.04 镜像是 3.10.0），
+      # 不配置也能跑 mvn。必须加它的真实原因有两个：
+      #   ① 镜像默认 JAVA_HOME 是 JDK 17，而 pom.xml 要求 java.version=21，不切换就编译失败
+      #   ② cache: maven 把 ~/.m2/repository 缓存起来，省掉第一次跑要下的几百个依赖 jar
+      # 日志里刷屏的 "Downloading from central: ..." 是 Spring Boot / LangChain4j 的依赖包，不是 Maven 本体
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+          # 显式指定，避免依赖 setup-java 默认的 **/pom.xml 通配匹配
+          cache-dependency-path: backend/pom.xml
+
+      # pom.xml 在 backend/ 子目录，必须用 working-directory 指定，否则根目录找不到 pom
+      #
+      # 关于 -DskipTests：这里刻意保留。仓库里的 5 个测试类全是 @SpringBootTest 集成测试，
+      # 需要连 MySQL + Redis + 真实 QWEN API Key，在 runner 上跑不通，所以先跳过。
+      # 但 -DskipTests 仍会"编译"测试代码，能拦住测试代码的编译错误（包名重构时就靠它兜底）；
+      # 不要换成 -Dmaven.test.skip=true，那个连编译都跳，等于彻底放弃这层保护。
+      # TODO: 后续补 services:（mysql:8 + redis）把集成测试真正跑起来，
+      #       或把纯单元测试拆成 *Test（CI 必跑）、集成测试拆成 *IT（failsafe，夜间跑）
+      - name: Build with Maven
+        working-directory: backend
+        run: mvn -B clean package -DskipTests
+
+      - name: Upload JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar-${{ github.run_number }}
+          path: backend/target/*.jar
+          # 没产出 jar 时直接报错，而不是静默上传空包
+          if-no-files-found: error
+
+  # ============================================================
+  # 前端：Vite 构建
+  # ============================================================
+  frontend:
+    name: Frontend (Node 20 / Vite)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    # npm 命令必须在 frontend/ 子目录执行，仓库根目录没有 package.json
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # package.json 的 engines 要求 ^20.19.0 || >=22.12.0，
+      # '20' 会解析到 20.x 最新版（>= 20.19.0），满足要求
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # 有 package-lock.json 时用 ci，可复现且更快
+      - name: Install Dependencies
+        run: npm ci
+
+      # TODO: 项目当前未安装 eslint/prettier，装好后再补 lint 步骤
+      #       （build 通过 ≠ 代码没问题，这一步目前是缺口）
+      - name: Build
+        run: npm run build
+
+      - name: Upload Dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-${{ github.run_number }}
+          # upload-artifact 的 path 相对仓库根目录，不是上面的 working-directory
+          path: frontend/dist
+          if-no-files-found: error
+
+  # ============================================================
+  # 汇总门禁：分支保护只需要勾这一个 check
+  # ============================================================
+  ci-success:
+    name: CI Success
+    needs: [ backend, frontend ]
+    # 上游失败/取消时也要跑，否则这个 check 会一直是 pending，把 PR 卡死
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify all jobs passed
+        run: |
+          echo "backend  = ${{ needs.backend.result }}"
+          echo "frontend = ${{ needs.frontend.result }}"
+          if [ "${{ needs.backend.result }}" != "success" ] || [ "${{ needs.frontend.result }}" != "success" ]; then
+            echo "::error::CI 未全部通过（backend=${{ needs.backend.result }}, frontend=${{ needs.frontend.result }}）"
+            exit 1
+          fi
+          echo "✓ 后端与前端构建均通过"
+
+# 部署段暂时停用：当前项目通过 docker compose 部署，不是 pm2。
+# 如需自动部署，建议改为构建并推送镜像到 GHCR，再由服务器 pull 更新：
+#
+#  deploy:
+#    needs: ci-success
+#    if: github.ref == 'refs/heads/main'
+#    runs-on: ubuntu-24.04
+#    permissions:
+#      contents: read
+#      packages: write
+#    steps:
+#      - uses: actions/checkout@v4
+#      - name: Build and push image
+#        run: |
+#          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+#          docker compose build
+#          docker compose push
