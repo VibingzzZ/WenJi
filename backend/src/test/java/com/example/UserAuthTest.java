@@ -1,8 +1,8 @@
 package com.example;
 
-import com.example.Common.Result;
-import com.example.po.DTO.LoginFormDTO;
-import com.example.Service.UserService;
+import com.example.common.Result;
+import com.example.po.dto.LoginFormDTO;
+import com.example.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,15 +16,15 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import static com.example.Common.Constants.RedisConstants.CAPTCHA_PREFIX;
+import static com.example.common.constants.RedisConstants.CAPTCHA_PREFIX;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.example.Pojo.User;
-import com.example.Mapper.UserMapper;
-import com.example.Common.Utils.Md5Util;
+import com.example.po.pojo.User;
+import com.example.mapper.UserMapper;
+import com.example.common.utils.Md5Util;
 
 /**
  * 用户认证测试类

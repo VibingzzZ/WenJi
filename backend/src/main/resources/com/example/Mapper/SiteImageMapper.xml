@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.example.Mapper.SiteImageMapper">
-    <select id="findBySiteId" resultType="com.example.Pojo.SiteImages">
-        SELECT * FROM site_images WHERE site_id = #{siteId} ORDER BY sort_order ASC
-    </select>
-</mapper>

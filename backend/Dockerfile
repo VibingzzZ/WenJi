@@ -1,4 +1,4 @@
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:21-jre-alpine
 
 # 1. 安装中文字体和配置工具
 # Alpine 使用 apk 命令，字体包名是 wqy-zenhei (没有 fonts- 前缀)
@@ -15,10 +15,13 @@ ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV LANGUAGE=zh_CN:zh
 
+# 创建一个目录，用于存放应用代码
 WORKDIR /app
 
+# 复制jar包到容器内
 COPY target/*.jar app.jar
 
+# 暴露端口，用于外部访问
 EXPOSE 8080
 
 # 3. 启动参数

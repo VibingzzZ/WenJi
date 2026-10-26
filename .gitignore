@@ -4,11 +4,13 @@
 .env
 chat-history.json
 chat-memory.json
-
+claude.md
 # ================= IDEA 配置（不提交）=================
 .idea/
 *.iml
 *.iws
+
+.docx/
 
 # ================= Backend (Java/Maven) =================
 backend/target/
@@ -21,3 +23,5 @@ frontend/node_modules/
 frontend/dist/
 frontend/.env.local
 node_modules
+
+

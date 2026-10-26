@@ -51,7 +51,7 @@ langchain4j:
 logging:
   level:
     org.springframework.ai.chat.client.advisor: debug
-    com.example.ai: debug
+    com.example.service.aiservice: debug
     com.baomidou.mybatisplus: debug
 
 mybatis-plus:
@@ -64,8 +64,8 @@ mybatis-plus:
       id-type: auto
       table-prefix: 
       table-underline: true
-  mapper-locations: classpath*:com/example/Mapper/*.xml
-  type-aliases-package: com.example.Pojo
+  mapper-locations: classpath*:com/example/mapper/*.xml
+  type-aliases-package: com.example.po.pojo
 
 # JWT 配置
 jwt:

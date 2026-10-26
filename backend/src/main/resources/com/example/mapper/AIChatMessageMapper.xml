@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.mapper.AIChatMessageMapper">
+
+    <!-- 根据会话 ID 查询消息列表 -->
+    <select id="selectBySessionId" resultType="com.example.po.pojo.AIChatMessage">
+        SELECT * FROM ai_chat_message
+        WHERE session_id = #{sessionId}
+        ORDER BY create_time ASC
+    </select>
+
+    <!-- 批量插入消息 -->
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO ai_chat_message (session_id, role, content, message_type, create_time)
+        VALUES
+        <foreach collection="messages" item="message" separator=",">
+            (#{message.sessionId}, #{message.role}, #{message.content}, #{message.messageType}, #{message.createTime})
+        </foreach>
+    </insert>
+
+    <!-- 查询用户的历史消息 -->
+    <select id="selectUserHistoryMessages" resultType="com.example.po.pojo.AIChatMessage">
+        SELECT m.* FROM ai_chat_message m
+        INNER JOIN ai_chat_session s ON m.session_id = s.session_id
+        WHERE s.user_id = #{userId}
+        ORDER BY m.create_time DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

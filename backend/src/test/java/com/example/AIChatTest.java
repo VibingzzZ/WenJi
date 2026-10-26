@@ -1,11 +1,11 @@
 package com.example;
 
-import com.example.Pojo.User;
-import com.example.Pojo.AIChatSession;
-import com.example.Mapper.UserMapper;
-import com.example.Mapper.AIChatSessionMapper;
-import com.example.Common.Utils.JwtUtils;
-import com.example.Common.Utils.Md5Util;
+import com.example.po.pojo.User;
+import com.example.po.pojo.AIChatSession;
+import com.example.mapper.UserMapper;
+import com.example.mapper.AIChatSessionMapper;
+import com.example.common.utils.JwtUtils;
+import com.example.common.utils.Md5Util;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import static com.example.Common.Constants.RedisConstants.USER_LOGIN_KEY;
+import static com.example.common.constants.RedisConstants.USER_LOGIN_KEY;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;

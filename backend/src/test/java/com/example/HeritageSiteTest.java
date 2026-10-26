@@ -1,7 +1,7 @@
 package com.example;
 
-import com.example.Common.Result;
-import com.example.Pojo.HeritageSite;
+import com.example.common.Result;
+import com.example.po.pojo.HeritageSite;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;

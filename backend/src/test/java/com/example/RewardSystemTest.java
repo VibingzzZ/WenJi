@@ -1,11 +1,11 @@
 package com.example;
 
-import com.example.Common.Result;
-import com.example.Pojo.Badge;
-import com.example.Pojo.User;
-import com.example.Mapper.UserMapper;
-import com.example.Common.Utils.JwtUtils;
-import com.example.Common.Utils.Md5Util;
+import com.example.common.Result;
+import com.example.po.pojo.Badge;
+import com.example.po.pojo.User;
+import com.example.mapper.UserMapper;
+import com.example.common.utils.JwtUtils;
+import com.example.common.utils.Md5Util;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import static com.example.Common.Constants.RedisConstants.USER_LOGIN_KEY;
+import static com.example.common.constants.RedisConstants.USER_LOGIN_KEY;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;

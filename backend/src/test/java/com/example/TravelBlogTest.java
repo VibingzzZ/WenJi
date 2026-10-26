@@ -1,8 +1,8 @@
 package com.example;
 
-import com.example.Exception.BusinessException;
-import com.example.Pojo.TravelBlog;
-import com.example.Service.TravelBlogService;
+import com.example.exception.BusinessException;
+import com.example.po.pojo.TravelBlog;
+import com.example.service.TravelBlogService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

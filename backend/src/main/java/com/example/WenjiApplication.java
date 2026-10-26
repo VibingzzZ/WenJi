@@ -9,7 +9,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 @SpringBootApplication
 @EnableTransactionManagement
 @EnableScheduling
-@MapperScan("com.example.Mapper")
+@MapperScan("com.example.mapper")
 public class WenjiApplication {
 
     public static void main(String[] args) {

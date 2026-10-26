@@ -23,4 +23,4 @@ mybatis-plus:
     db-config:
       id-type: auto
   mapper-locations: classpath*:com/example/Mapper/*.xml
-  type-aliases-package: com.example.Pojo
+  type-aliases-package: com.example.po.pojo

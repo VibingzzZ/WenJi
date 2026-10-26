@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.example.Mapper.OpeningHoursMapper">
-    <select id="findBySiteId" resultType="com.example.Pojo.OpeningHours">
-        SELECT * FROM opening_hours WHERE site_id = #{siteId} ORDER BY day_of_week ASC
-    </select>
-</mapper>
