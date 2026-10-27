@@ -35,6 +35,23 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # 历史踩坑：git 索引里曾同时存在 po/vo/AI/ 与 po/vo/ai/ 两套路径。
+      # Windows 文件系统不区分大小写 → 本地只落地一个目录，编译通过；
+      # Linux runner 上是两个真实目录 → 同名类被编译两次，javac 在 enter 阶段就报
+      # "duplicate class"，并因此跳过注解处理，随后所有 @Slf4j 的 log、@Data 的 getter
+      # 都变成 "cannot find symbol"（看着像 Lombok 坏了，其实是重复类的连锁反应）。
+      # 这个检查只花 1 秒，能把这类"本地好好的、CI 必挂"的问题挡在编译之前。
+      - name: Check case-collision paths
+        run: |
+          dupes=$(git ls-files | tr 'A-Z' 'a-z' | sort | uniq -d)
+          if [ -n "$dupes" ]; then
+            echo "::error::git 索引中存在仅大小写不同的重复路径，Linux 上会触发 duplicate class:"
+            echo "$dupes"
+            echo "修复：git -c core.ignorecase=false rm -r --cached <旧的大写路径>"
+            exit 1
+          fi
+          echo "✓ 无大小写碰撞路径"
+
       # 这步不是为了"装 Maven"——runner 镜像本身就自带 Maven（24.04 镜像是 3.10.0），
       # 不配置也能跑 mvn。必须加它的真实原因有两个：
       #   ① 镜像默认 JAVA_HOME 是 JDK 17，而 pom.xml 要求 java.version=21，不切换就编译失败
