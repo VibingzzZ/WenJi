@@ -116,8 +116,13 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      # TODO: 项目当前未安装 eslint/prettier，装好后再补 lint 步骤
-      #       （build 通过 ≠ 代码没问题，这一步目前是缺口）
+      # eslint 10 flat config，规则见 frontend/eslint.config.js
+      # 放在 Build 之前：lint 几秒跑完，语法/引用类问题不必等完整打包才暴露。
+      # 只接了 js recommended + vue essential（能抓真 bug 的那层），
+      # 历史遗留的 no-unused-vars 统一降级为 warning，因此这里失败 = 确实有错。
+      - name: Lint
+        run: npm run lint
+
       - name: Build
         run: npm run build
 

@@ -771,6 +771,8 @@ const fetchNearbySites = async () => {
       }
     }
   } catch (error) {
+    // 定位失败或接口异常时降级：保留页面默认状态，不阻断渲染，但要留下可追溯的痕迹
+    console.warn('[HomeView] 加载附近景点失败:', error?.message ?? error)
   }
 }
 
