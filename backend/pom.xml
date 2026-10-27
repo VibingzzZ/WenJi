@@ -122,11 +122,6 @@
             <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
             <version>4.5.0</version>
         </dependency>
-        <dependency>
-            <groupId>org.redisson</groupId>
-            <artifactId>redisson-spring-boot-starter</artifactId>
-            <version>3.27.0</version>
-        </dependency>
         <!-- MySQL Connector -->
         <dependency>
             <groupId>com.mysql</groupId>

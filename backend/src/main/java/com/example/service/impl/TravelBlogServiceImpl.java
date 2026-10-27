@@ -7,7 +7,6 @@ import com.example.po.pojo.TravelBlog;
 import com.example.service.BadgeService;
 import com.example.service.PointService;
 import com.example.service.TravelBlogService;
-import io.lettuce.core.RedisClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -30,8 +29,6 @@ public class TravelBlogServiceImpl implements TravelBlogService {
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
-    @Autowired
-    public RedisClient redisClient;
     /**
      * 发布旅游博客
      * <p>
