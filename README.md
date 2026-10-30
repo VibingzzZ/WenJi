@@ -32,30 +32,59 @@
 
 **RAG 把 AI 从「通用闲聊」约束到「基于知识库作答」**：检索设 3 级降级，任一环节失效退回纯 LLM，不会把对话链路拖死。
 
+![数据图](docs/assets/performance-section.png)
+
 ### 2.1 RAG 检索链路
 
 | 项 | 数值 |
 |---|---|
 | 向量模型 / 维度 | 通义千问 `text-embedding-v3` / **1024 维** |
 | 召回 | **Top-5**；相似度下限 **0.6**，低于此值不进 Prompt |
-| 高相关阈值 | **0.85**，达到则 Prompt 切为「优先基于资料回答」 |
-| 知识库 | **3 条**非遗文档（景泰蓝 / 青花瓷 / 京剧，514 字） |
-| 存储隔离 | 业务缓存 DB3 / 向量库 DB4 |
+| 高相关阈值 | **0.85**，达到则 Prompt 切为「优先基于资料回答」（实测 20 条命中题仅 1 条达到，该档近于死代码） |
+| 知识库 | **32 条**岭南非遗语料（广府 17 / 潮汕 8 / 客家 4 / 雷州 1 / 少数民族 1 / 粤港澳 1，共 6,561 字） |
+| 存储隔离 | 业务缓存 DB3 / 向量库 **DB0**（langchain4j 的 `database` 配置字段不生效，写了也会落 DB0） |
 | 降级路径 | **3 条**：检索无命中、检索异常、LLM 异常 → 均退回纯 LLM |
 
 ### 2.2 内容与交付规模
 
 11 个遗产景点（北京 6 / 清远 5，国家级 7）+ 3 个 AR 文物模型 + 4 套徽章规则；Docker Compose 一键起全栈，GitHub Actions 跑 Maven + Vite 双构建。
 
-### 2.3 效果度量口径
+### 2.3 实测数据（2026-10-30）
 
-> 知识库仅 3 条、样本不足，**不写未实测的数字**。扩容后按此回填：
+> 口径：本地单机直连千问网关（`qwen3.8-max` / `text-embedding-v3`），Redis Stack 向量库（HNSW·COSINE），
+> **顺序单并发**。延迟大头在模型网关侧，不在应用侧。复现见 `bench/`，明细见 `bench/results/REPORT.md`。
 
-| 指标 | 测量方法 |
+**检索质量**（32 条语料 / 20 题标注 + 4 题对照）
+
+| 指标 | 实测 |
 |---|---|
-| 检索命中率 @5 | 30 条问答对 → 逐条检索 → 人工判定 |
-| 检索延迟 P95 | 向量化 + 检索耗时打点（不含 LLM 生成） |
-| 有 / 无 RAG 事实命中率 | 同题双跑，人工标注对比 |
+| 召回 @5 | 20/20 = **100%** |
+| 检索降级率 | **0%**（20/20 相似度 ≥ 0.6） |
+| top1 相似度 | 均值 **0.755**（0.650 ~ 0.850） |
+| 对照题误召回 | **0/4**（对照题 top1 均值 0.353） |
+
+**延迟构成**（单次检索，共约 1.02 s）
+
+| 环节 | 耗时 | 占比 |
+|---|---|---|
+| query 向量化 · embedding 网关往返 | **1,023 ms** | 99.9% |
+| 向量 KNN · Redis | **0.9 ms** | 0.1% |
+
+→ 瓶颈在向量化而非向量库：优化应做 query 向量缓存或批量 embedding，调 Redis 参数没有意义。
+
+**端到端**（120 次 SSE 调用 = 5 轮 × 24 问，成功率 **100%**，无 5xx / 空回复 / 超时）
+
+| 分组 | n | TTFT p50 | TTFT p95 | 总耗时 p95 |
+|---|---|---|---|---|
+| 全部 | 120 | 5.8 s | 15.0 s | 17.2 s |
+| 命中知识库 | 100 | 5.5 s | 10.6 s | 15.8 s |
+| 知识库外（对照） | 20 | 10.0 s | 22.9 s | 24.0 s |
+
+**这些数字不能这么用**：
+
+- 不写并发 / QPS —— 本轮是单机顺序打网关，没有并发数据
+- 不写「RAG 让首字延迟降低 X%」—— 命中组 vs 对照组是分组对比（n=100/20，问题类型不同），不是随机对照实验，只能说「观察到命中组更快、回复更短」
+- p95 是**网关尾延迟**：同题重复 5 次，TTFT 极差均值 4,222 ms、最大 15,546 ms，波动来自网关排队而非后端代码
 
 ---
 
@@ -99,14 +128,15 @@
 | **AR / 3D** | A-Frame 1.6 + MindAR 1.2.5（CDN 引入）+ Three.js 0.182 |
 | **地图 / 可视化** | 高德 AMap JSAPI Loader + Leaflet + ECharts 6 |
 | **后端** | Spring Boot 3.3.5 / JDK 21 / MyBatis-Plus 3.5.7 / JJWT 0.11.5 / Knife4j 4.5.0 |
-| **AI** | LangChain4j 1.0.1-beta6（OpenAI 兼容模式接入通义千问 qwen-plus）+ Project Reactor（SSE） |
-| **数据** | MySQL 8.0（业务数据）/ Redis 7（缓存 DB3、向量库 DB4、聊天记忆） |
+| **AI** | LangChain4j 1.0.1-beta6（OpenAI 兼容模式接入通义千问 `qwen3.8-max`）+ Project Reactor（SSE） |
+| **数据** | MySQL 8.0（业务数据）/ Redis Stack 7.2（含 RediSearch；缓存 DB3、向量库 DB0、聊天记忆） |
 | **交付** | Docker Compose（四服务编排）+ GitHub Actions CI |
 
 **关键依赖说明**
 
 - `langchain4j-spring-boot-starter` + `langchain4j-reactor`：声明式 AI Service 与 `Flux<String>` 流式返回。
-- `langchain4j-community-redis-spring-boot-starter`：Redis 作为 EmbeddingStore，向量与业务缓存用不同 DB 隔离。
+- `langchain4j-community-redis-spring-boot-starter`：Redis 作为 EmbeddingStore。**注意它不接受 `database` 配置**，
+  向量固定写 DB0；业务缓存仍在 DB3（靠 key 前缀隔离，不靠 DB）。
 - `langchain4j-document-parser-apache-pdfbox`：知识库支持 PDF 文档解析入库。
 
 ---
@@ -120,7 +150,7 @@
 | JDK | 21+ |
 | Maven | 3.9+ |
 | MySQL | 8.0+ |
-| Redis | 7.x |
+| Redis | **Redis Stack 7.2+**（需 RediSearch 模块，普通 `redis:7` 会在 `FT._LIST` 报 unknown command） |
 | Node.js | 20.19+ / 22.12+ |
 | Docker + Compose | 可选，用于一键部署 |
 

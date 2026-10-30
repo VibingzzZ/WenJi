@@ -3,7 +3,7 @@ spring:
     redis:
       port: 6379
       host: localhost
-      password: ""
+      password: 123321
       # 连接池配置
       lettuce:
         pool:
@@ -46,9 +46,13 @@ langchain4j:
     redis:
       host: localhost
       port: 6379
-      password: ""
+      password: 123321
+      user: default
       database: 4          # 独立 DB，和业务缓存 (db=3) 隔离
 logging:
+  # 同时输出到控制台和文件，供 bench/parse_rag_logs.py 解析 RAG 指标
+  file:
+    name: logs/wenji.log
   level:
     org.springframework.ai.chat.client.advisor: debug
     com.example.service.aiservice: debug
