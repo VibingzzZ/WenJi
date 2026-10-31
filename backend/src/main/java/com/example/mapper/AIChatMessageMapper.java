@@ -22,6 +22,14 @@ public interface AIChatMessageMapper extends BaseMapper<AIChatMessage> {
     List<AIChatMessage> selectBySessionId(@Param("sessionId") String sessionId);
 
     /**
+     * 查询某个会话最近 N 条消息（按时间倒序），用于 Redis 热数据缺失时回填上下文
+     * @param sessionId 会话 ID
+     * @param limit 条数上限
+     * @return 消息列表（倒序）
+     */
+    List<AIChatMessage> selectRecentBySessionId(@Param("sessionId") String sessionId, @Param("limit") int limit);
+
+    /**
      * 批量插入消息（用于异步归档）
      * @param messages 消息列表
      * @return 影响行数

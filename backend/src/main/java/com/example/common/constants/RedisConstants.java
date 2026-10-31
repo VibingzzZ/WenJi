@@ -13,7 +13,7 @@ public class RedisConstants {
     public static final String AI_CHAT_HISTORY_PREFIX="chat:history:";//ai对话前缀
 
     //RedisChatHistory.java
-    public static final long AI_CHAT_HISTORY_EXPIRE=7 * 24 * 60 * 60;       //用户对话历史过期时间
+    public static final long AI_CHAT_HISTORY_EXPIRE=7 * 24 * 60 * 60;       //用户对话历史过期时间（单位：秒，7 天）
 
     public static final  String CHAT_HISTORY_PREFIX = "chat:";  //用户存储对话前缀
 

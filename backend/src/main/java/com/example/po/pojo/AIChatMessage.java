@@ -41,6 +41,8 @@ public class AIChatMessage {
 
     private LocalDateTime createTime; // 创建时间
 
+    private String contentHash;    // 内容指纹（sessionId + role + 正文 的 MD5），归档幂等去重用
+
     /**
      * 以下字段用于 AI 分析和推荐
      */
