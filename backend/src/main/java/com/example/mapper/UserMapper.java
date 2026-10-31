@@ -43,4 +43,11 @@ public interface UserMapper extends BaseMapper<User> {
      */
     void updateUserInfo(@Param("userId") Long userId, @Param("userUpdateDTO") @RequestBody @Validated UserUpdateDTO userUpdateDTO);
 
+    /**
+     * 增加经验
+     * @param userId
+     * @param points
+     */
+    @Update("UPDATE user set experience=IFNULL(experience,0)+#{points} where user_id = #{userId}")
+    int addExperience(@Param("userId")Integer userId,@Param("points") Integer points);
 }

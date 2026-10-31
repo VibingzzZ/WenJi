@@ -2,6 +2,11 @@
 .DS_Store
 *.log
 .env
+# 压测/抓取的本地凭证与产物（含密码、token）
+bench/.bench.env
+bench/.token
+bench/results/
+bench/knowledge/.seeded.json
 chat-history.json
 chat-memory.json
 claude.md

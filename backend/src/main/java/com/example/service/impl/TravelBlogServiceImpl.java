@@ -4,81 +4,66 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.example.exception.BusinessException;
 import com.example.mapper.TravelBlogMapper;
 import com.example.po.pojo.TravelBlog;
-import com.example.service.BadgeService;
-import com.example.service.PointService;
 import com.example.service.TravelBlogService;
-import io.lettuce.core.RedisClient;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.DigestUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @Service
+@Slf4j
 public class TravelBlogServiceImpl implements TravelBlogService {
 
     @Autowired
     private TravelBlogMapper travelBlogMapper;
 
     @Autowired
-    private PointService pointService;
+    private TravelBlogTxService travelBlogTxService;
 
-    @Autowired
-    private BadgeService badgeService;
-    
-    @Autowired
-    private StringRedisTemplate stringRedisTemplate;
-
-    @Autowired
-    public RedisClient redisClient;
     /**
-     * 发布旅游博客
+     * 发布旅游博客。
      * <p>
-     * 该方法处理博客发布的核心逻辑，包括分布式锁控制、博客入库、积分奖励及徽章发放。
-     * 使用 Redis 分布式锁防止用户频繁操作，确保数据一致性。
-     * </p>
-     *
-     * @param blog 待发布的旅游博客对象，包含用户信息及博客内容
-     * @throws BusinessException 当获取锁失败（操作频繁）时抛出
+     * 幂等策略：同一用户对同一正文只成功发布一次。
+     * 先用 content_hash 查一次（挡住绝大多数重复点击），
+     * 再由 travel_blog 的 uniq_user_content 唯一索引兜住并发撞车。
+     * <p>
+     * 注意事务边界：本方法<b>不加</b> @Transactional。
+     * 幂等判断和异常捕获必须在事务之外，否则在事务内吞掉 DuplicateKeyException
+     * 会让事务被标记 rollback-only，最终抛 UnexpectedRollbackException。
+     * 真正的写库在 {@link TravelBlogTxService#doPublish} 里，那个类自己带事务。
      */
     @Override
-    @Transactional
     public void publishBlog(TravelBlog blog) {
+        Integer userId = blog.getUserId();
+        String content = blog.getContent();
+        if (content == null || content.isBlank()) {
+            throw new BusinessException(400, "游记内容不能为空");
+        }
 
-//        String lockKey = LOCK_PREFIX + "blog:" + blog.getUserId();
-//        String lockValue = UUID.randomUUID().toString();
-//
-//        Boolean acquired = false;
-//        try {
-//            acquired = stringRedisTemplate.opsForValue()
-//                    .setIfAbsent(lockKey, lockValue, BLOG_LOCK_EXPIRE, TimeUnit.SECONDS);
-//
-//            if (Boolean.FALSE.equals(acquired)) {
-//                throw new BusinessException(429, "操作太频繁，请稍后再试");
-//            }
-//
-//            int experience = 10;
-//            blog.setExperienceEarned(experience);
-//            travelBlogMapper.insert(blog);
-//
-//            pointService.addPoints(blog.getUserId(), experience, "blog", "发布旅游心得打卡");
-//
-//            badgeService.checkAndDistributeBadges(blog.getUserId(), "blog");
-//            badgeService.checkAndDistributeBadges(blog.getUserId(), "footprint");
-//        } finally {
-//            // 只在当前线程持有锁的情况下释放锁
-//            if (Boolean.TRUE.equals(acquired)) {
-//                try {
-//                    String currentValue = stringRedisTemplate.opsForValue().get(lockKey);
-//                    if (lockValue.equals(currentValue)) {
-//                        stringRedisTemplate.delete(lockKey);
-//                    }
-//                } catch (Exception e) {
-//                    // 释放锁失败不影响主业务流程，记录日志即可
-//                }
-//            }
-//        }
+        String contentHash = DigestUtils.md5DigestAsHex(content.getBytes(StandardCharsets.UTF_8));
+
+        // 1. 幂等判断：同一用户 + 同一正文视为重复提交，直接当成功返回
+        Long exists = travelBlogMapper.selectCount(
+                Wrappers.<TravelBlog>lambdaQuery()
+                        .eq(TravelBlog::getUserId, userId)
+                        .eq(TravelBlog::getContentHash, contentHash)
+        );
+        if (exists != null && exists > 0) {
+            log.info("重复提交已拦截 userId={}", userId);
+            return;
+        }
+
+        // 2. 落库，并发撞车时由唯一索引拦截
+        try {
+            travelBlogTxService.doPublish(blog, contentHash);
+        } catch (DuplicateKeyException e) {
+            log.info("并发重复提交被唯一索引拦截 userId={}", userId);
+        }
     }
 
     @Override
@@ -91,7 +76,7 @@ public class TravelBlogServiceImpl implements TravelBlogService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void deleteBlog(Integer userId, Long blogId) {
         TravelBlog blog = travelBlogMapper.selectById(blogId);
         if (blog == null) {

@@ -9,13 +9,23 @@
         ORDER BY create_time ASC
     </select>
 
-    <!-- 批量插入消息 -->
+    <!-- 查询某个会话最近 N 条消息（倒序，用于回填上下文） -->
+    <select id="selectRecentBySessionId" resultType="com.example.po.pojo.AIChatMessage">
+        SELECT * FROM ai_chat_message
+        WHERE session_id = #{sessionId}
+        ORDER BY create_time DESC, message_id DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 批量插入消息（归档用）：靠 content_hash 唯一索引做幂等，重复消息静默跳过 -->
     <insert id="batchInsert" parameterType="java.util.List">
-        INSERT INTO ai_chat_message (session_id, role, content, message_type, create_time)
+        INSERT INTO ai_chat_message (session_id, role, content, content_hash, message_type, create_time)
         VALUES
         <foreach collection="messages" item="message" separator=",">
-            (#{message.sessionId}, #{message.role}, #{message.content}, #{message.messageType}, #{message.createTime})
+            (#{message.sessionId}, #{message.role}, #{message.content}, #{message.contentHash},
+             #{message.messageType}, #{message.createTime})
         </foreach>
+        ON DUPLICATE KEY UPDATE message_id = message_id
     </insert>
 
     <!-- 查询用户的历史消息 -->

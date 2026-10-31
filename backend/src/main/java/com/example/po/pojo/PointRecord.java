@@ -18,6 +18,11 @@ import java.time.LocalDateTime;
 public class PointRecord {
     @TableId(type = IdType.AUTO)
     private Long recordId;
+    /**
+     * 业务幂等键，形如 blog:123 / badge:5
+     * 与 user_id + source 组成唯一索引，重复发放会被数据库挡住
+     */
+    private String bizId;
     private Integer userId;
     private Integer type; // 1-获得，2-消耗
     private String source; // blog/badge/mall_exchange

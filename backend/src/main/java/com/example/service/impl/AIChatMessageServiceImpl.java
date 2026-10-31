@@ -5,13 +5,15 @@ import com.example.mapper.AIChatMessageMapper;
 import com.example.mapper.AIChatSessionMapper;
 import com.example.po.pojo.AIChatMessage;
 import com.example.po.pojo.AIChatSession;
-import com.example.repository.RedisChatMemory;
+import com.example.common.utils.ChatMessageUtils;
+import com.example.repository.RedisChatMemoryStore;
 import com.example.service.AIChatMessageService;
 import dev.langchain4j.data.message.ChatMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,7 +37,7 @@ public class AIChatMessageServiceImpl implements AIChatMessageService {
 
     private final AIChatSessionMapper chatSessionMapper;
     @Autowired
-    private RedisChatMemory redisChatMemory;
+    private RedisChatMemoryStore redisChatMemory;
 
 
     /**
@@ -47,6 +49,12 @@ public class AIChatMessageServiceImpl implements AIChatMessageService {
     @Transactional(rollbackFor = Exception.class)
     public boolean saveMessage(AIChatMessage message) {
         try {
+            // 补齐内容指纹，与归档任务共用同一套去重口径
+            if (message.getContentHash() == null) {
+                message.setContentHash(ChatMessageUtils.contentHash(
+                        message.getSessionId(), message.getRole(), message.getContent()));
+            }
+
             log.info("开始保存消息，sessionId: {}, role: {}, content: {}",
                 message.getSessionId(), message.getRole(), message.getContent());
 
@@ -55,6 +63,11 @@ public class AIChatMessageServiceImpl implements AIChatMessageService {
                 result, message.getMessageId(), message.getSessionId());
 
             return result > 0;
+        } catch (DuplicateKeyException e) {
+            // 同一会话、同一角色的相同内容视为重复消息，当作已保存处理
+            log.info("消息已存在，跳过写入，sessionId: {}, contentHash: {}",
+                message.getSessionId(), message.getContentHash());
+            return true;
         } catch (Exception e) {
             log.error("保存消息失败，sessionId: {}, role: {}",
                 message.getSessionId(), message.getRole(), e);
@@ -263,8 +276,11 @@ public class AIChatMessageServiceImpl implements AIChatMessageService {
             if (!chatMessages.isEmpty()) {
                 int saved = batchSaveMessages(chatMessages);
                 log.info("归档会话消息成功，sessionId: {}, 保存 {} 条", sessionId, saved);
-                //归档成功后，可以直接从 Redis 中清理旧数据
-                redisChatMemory.deleteMessages(sessionId);
+                // 确有新消息落库时才清理热数据；全部被幂等跳过时保留 Redis，避免每 5 分钟
+                // 「清了又回填」的空转
+                if (saved > 0) {
+                    redisChatMemory.deleteMessages(sessionId);
+                }
                 return saved;
             }
         } catch (Exception e) {
@@ -299,16 +315,23 @@ public class AIChatMessageServiceImpl implements AIChatMessageService {
     }
 
     /**
-     * 转换 Spring AI Message 到 AIChatMessage（对象转化）
-     * @param message Spring AI Message
+     * 转换 LangChain4j 的 ChatMessage 到 AIChatMessage（对象转化）
+     *
+     * <p>正文取可读文本而不是 {@code message.toString()}，否则历史记录里会显示成
+     * {@code UserMessage { contents = [TextContent { text = "..." }] }}。
+     *
+     * @param message LangChain4j 消息
      * @param sessionId 会话 ID
      * @return AIChatMessage
      */
     private AIChatMessage convertToAIChatMessage(ChatMessage message, String sessionId) {
+        String role = message.type().name().toLowerCase();
+        String text = ChatMessageUtils.plainText(message);
         return AIChatMessage.builder()
                 .sessionId(sessionId)
-                .role(message.type().name().toLowerCase())
-                .content(message.toString())
+                .role(role)
+                .content(text)
+                .contentHash(ChatMessageUtils.contentHash(sessionId, role, text))
                 .messageType("text")
                 .createTime(LocalDateTime.now())
                 .build();

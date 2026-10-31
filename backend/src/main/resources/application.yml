@@ -3,7 +3,7 @@ spring:
     redis:
       port: 6379
       host: localhost
-      password: ""
+      password: 123321
       # 连接池配置
       lettuce:
         pool:
@@ -24,21 +24,21 @@ spring:
 langchain4j:
   open-ai:
     chat-model:
-      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      base-url: https://cn-beijing.maas.qianwenaiapi.com/compatible-mode/v1
       api-key: ${QWEN_API_KEY}
-      model-name: qwen-plus
+      model-name: qwen3.8-max
       temperature: 0.8
       max-tokens: 200
       log-requests: true
       log-responses: true
     streaming-chat-model:
-      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      base-url: https://cn-beijing.maas.qianwenaiapi.com/compatible-mode/v1
       api-key: ${QWEN_API_KEY}
-      model-name: qwen-plus
+      model-name: qwen3.8-max
       temperature: 0.8
       max-tokens: 200
     embedding-model:
-      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      base-url: https://cn-beijing.maas.qianwenaiapi.com/compatible-mode/v1
       api-key: ${QWEN_API_KEY}
       model-name: text-embedding-v3
       dimension: 1024
@@ -46,9 +46,13 @@ langchain4j:
     redis:
       host: localhost
       port: 6379
-      password: ""
+      password: 123321
+      user: default
       database: 4          # 独立 DB，和业务缓存 (db=3) 隔离
 logging:
+  # 同时输出到控制台和文件，供 bench/parse_rag_logs.py 解析 RAG 指标
+  file:
+    name: logs/wenji.log
   level:
     org.springframework.ai.chat.client.advisor: debug
     com.example.service.aiservice: debug
