@@ -85,7 +85,7 @@ public class BadgeServiceImpl implements BadgeService {
                 
                 // 增加奖励阅历
                 if (badge.getExperienceBonus() > 0) {
-                    pointService.addPoints(userId, badge.getExperienceBonus(), "badge", "获得徽章奖励：" + badge.getName());
+                    pointService.addPoints(userId, badge.getExperienceBonus(), "badge", "获得徽章奖励：" + badge.getName(), "badge:" + badge.getBadgeId());
                 }
             }
         }

@@ -22,6 +22,7 @@ public class TravelBlog {
     private String siteId;
     private String title;
     private String content;
+    private String contentHash; // 正文 MD5，与 user_id 组成唯一键做发布幂等
     private String images; // JSON 字符串
     private Integer experienceEarned;
     private Integer status;
