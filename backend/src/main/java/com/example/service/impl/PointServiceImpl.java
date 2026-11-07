@@ -8,8 +8,11 @@ import com.example.service.PointService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import static com.example.common.constants.RedisConstants.USER_INFO_PREFIX;
 
 @Service
 @Slf4j
@@ -20,6 +23,9 @@ public class PointServiceImpl implements PointService {
 
     @Autowired
     private PointRecordMapper pointRecordMapper;
+
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
 
     /**
      * 发积分并记流水。
@@ -60,6 +66,15 @@ public class PointServiceImpl implements PointService {
         if (affected == 0) {
             // 用户不存在：抛异常把刚插入的流水一起回滚，避免孤儿记录
             throw new BusinessException(404, "用户不存在，阅历无法入账");
+        }
+
+        // 3. 阅历变了，用户资料缓存必须失效
+        // 漏掉这一步的症状是：发了游记、涨了经验，但个人页的等级要等缓存过期才会变
+        try {
+            stringRedisTemplate.delete(USER_INFO_PREFIX + userId);
+        } catch (Exception e) {
+            // 删缓存失败不影响发积分本身，等 TTL 自然过期
+            log.warn("清除用户信息缓存失败，userId={}", userId, e);
         }
     }
 }

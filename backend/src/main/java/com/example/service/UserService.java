@@ -18,7 +18,7 @@ public interface UserService {
      * @Param userId
      * @Return
      */
-    Result<UserInfoVO> getUserProfile(Long userId, String  token);
+    Result<UserInfoVO> getUserProfile(Long userId);
 
     /* *
      * 修改用户信息

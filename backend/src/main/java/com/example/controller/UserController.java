@@ -62,13 +62,12 @@ public class UserController {
      */
     @Operation(summary = "获取当前用户信息")
     @GetMapping("/currentUserInfo")
-    public Result<UserInfoVO> getUserProfile(HttpServletRequest request){
+    public Result<UserInfoVO> getUserProfile(){
         Long userId= getCurrentUserId();
         if(userId==null){
             return Result.error("未登录",null);
         }
-        String token=getTokenFromRequest(request);
-        return userService.getUserProfile(userId,token);
+        return userService.getUserProfile(userId);
     }
 
     /**

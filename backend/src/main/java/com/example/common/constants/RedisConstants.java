@@ -14,6 +14,10 @@ public class RedisConstants {
 
     public static final long USER_LOGIN_EXPIRE = 30;       //用户登录过期时间
 
+    public static final String USER_INFO_PREFIX = "user:info:"; //用户资料缓存前缀（按 userId 维度，与登录态分离）
+
+    public static final long USER_INFO_EXPIRE = 30;        //用户资料缓存过期时间（分钟）
+
     public static final String AI_CHAT_HISTORY_PREFIX = "chat:history:";//ai对话前缀
 
     //RedisChatHistory.java

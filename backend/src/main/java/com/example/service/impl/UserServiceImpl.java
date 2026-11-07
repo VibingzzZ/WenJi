@@ -3,6 +3,7 @@ package com.example.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.common.Result;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.po.dto.LoginFormDTO;
 import com.example.po.dto.UserUpdateDTO;
 import com.example.mapper.UserMapper;
@@ -46,6 +47,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
 
 
@@ -239,37 +243,76 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     /**
      * 获取用户信息
      *
+     * <p>缓存存的是完整 UserInfoVO（JSON），按 userId 维度独立存放，不复用登录态 {@code user:<token>}：
+     * 登录态 Hash 里只有 6 个字段（缺 realName/gender/level 等），
+     * 而且一个用户多端登录会有多份副本，注定同步不干净。
+     *
      * @param userId 用户ID
      * @return 用户信息
      */
     @Override
-    public Result<UserInfoVO> getUserProfile(Long userId, String token) {
+    public Result<UserInfoVO> getUserProfile(Long userId) {
+        if (userId == null) {
+            return Result.error("未登录", null);
+        }
+
+        String cacheKey = USER_INFO_PREFIX + userId;
+
         try {
-            // 从Redis中获取用户信息
-            String key  = USER_LOGIN_KEY + userId;
-            Map<Object,Object> userInfo = stringRedisTemplate.opsForHash().entries(key);
-            if(!userInfo.isEmpty()){
-                //Redis中有缓存，构建基础用户信息
-                UserInfoVO userInfoVO = new UserInfoVO();
-                userInfoVO.setUsername((String) userInfo.get("username"));
-                userInfoVO.setPhone((String) userInfo.get("phone"));
-                userInfoVO.setAvatarUrl((String) userInfo.get("avatarUrl"));
-                userInfoVO.setLocation((String) userInfo.get("location"));
-                Object expObj = userInfo.get("experience");
-                if (expObj != null) {
-                    userInfoVO.setExperience(Integer.parseInt(expObj.toString()));
+            // 1. 先读缓存
+            try {
+                String cached = stringRedisTemplate.opsForValue().get(cacheKey);
+                if (cached != null) {
+                    UserInfoVO cachedVO = objectMapper.readValue(cached, UserInfoVO.class);
+                    // 命中后顺手续期，与登录态保持一致的滑动过期策略
+                    stringRedisTemplate.expire(cacheKey, USER_INFO_EXPIRE, TimeUnit.MINUTES);
+                    log.info("从 redis 中获取用户信息成功，用户 ID：{}", userId);
+                    return Result.success(cachedVO);
                 }
-                log.info("从 redis 中获取用户信息成功，用户 ID：{}",userId);
-                return Result.success(userInfoVO);
+            } catch (Exception e) {
+                // 缓存异常不能影响主流程，降级为查库
+                log.warn("读取用户信息缓存失败，降级查库，用户 ID：{}", userId, e);
             }
 
-            //redis没有缓存，从数据库获取完整信息
+            // 2. 未命中，回源数据库
             UserInfoVO userInfoVO = userMapper.getByUserId(userId);
-            log.info("从数据库中获取用户信息成功，用户ID：{}",userId);
+            if (userInfoVO == null) {
+                return Result.error("用户不存在", null);
+            }
+            log.info("从数据库中获取用户信息成功，用户ID：{}", userId);
+
+            // 3. 写回缓存，失败不影响本次返回
+            try {
+                stringRedisTemplate.opsForValue().set(
+                        cacheKey,
+                        objectMapper.writeValueAsString(userInfoVO),
+                        USER_INFO_EXPIRE, TimeUnit.MINUTES);
+            } catch (Exception e) {
+                log.warn("写入用户信息缓存失败，用户 ID：{}", userId, e);
+            }
+
             return Result.success(userInfoVO);
         } catch (Exception e) {
             log.error("获取用户信息异常",e);
             return Result.error("获取用户信息失败，请稍后重试",null);
+        }
+    }
+
+    /**
+     * 清除用户资料缓存。
+     *
+     * <p>资料变更、注销账号时必须调用，否则前端会读到最长 {@code USER_INFO_EXPIRE} 分钟的旧数据。
+     *
+     * @param userId 用户ID
+     */
+    private void evictUserInfoCache(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        try {
+            stringRedisTemplate.delete(USER_INFO_PREFIX + userId);
+        } catch (Exception e) {
+            log.warn("清除用户信息缓存失败，用户 ID：{}", userId, e);
         }
     }
 
@@ -291,6 +334,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         
         // 调用mapper更新用户信息
         userMapper.updateUserInfo(userId, userUpdateDTO);
+
+        // 必须清掉资料缓存，否则前端最长 30 分钟都读不到新数据
+        evictUserInfoCache(userId);
 
         // 清理并更新 Redis 缓存：获取当前请求头中的 token
         ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
@@ -330,6 +376,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     public void removeUserById(Long userId) {
         try {
             userMapper.deleteById(userId);
+            // 用户已删，缓存不能留
+            evictUserInfoCache(userId);
             log.info("用户删除成功，用户ID：{}",userId);
         } catch (RuntimeException e) {
             log.error("用户删除失败，用户ID：{}",userId,e);
