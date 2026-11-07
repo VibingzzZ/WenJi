@@ -75,12 +75,28 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
 
     private Result<UserLoginVO>handlerLogin(User user,@RequestBody LoginFormDTO loginFormDTO){
-        // 2.1 用户存在，验证密码和验证码
+        // 2.1 先查失败次数，超限直接拒绝
+        // 注意：key 不存在时 get 返回 null，不能直接 parseInt，否则抛 NumberFormatException
+        String failKey = LOGIN_FAIL_TIMES + loginFormDTO.getUsername();
+        String failCountStr = stringRedisTemplate.opsForValue().get(failKey);
+        int failTimes = failCountStr == null ? 0 : Integer.parseInt(failCountStr);
+        if (failTimes >= LOGIN_FAIL_MAX) {
+            // 只拒绝，不清零计数。清掉等于变相解锁，攻击者又能接着试
+            log.warn("用户 {} 登录失败次数过多，已临时锁定", loginFormDTO.getUsername());
+            return error("登录失败次数过多，请 " + LOGIN_FAIL_EXPIRE + " 分钟后再试", null);
+        }
+
         String encryptedPassword = Md5Util.getMD5String(loginFormDTO.getPassword());
 
-        // 验证验证码（需要从前端传入captchaKey）
-        if (isCaptchaValid(loginFormDTO.getCaptchaKey(), loginFormDTO.getCaptcha())
-                && encryptedPassword.equals(user.getPassword())) {
+        // 2.2 验证验证码和密码
+        // isCaptchaValid 必须放在 && 左侧：保证无论密码对错，验证码都会被消费掉
+        boolean loginSuccess = isCaptchaValid(loginFormDTO.getCaptchaKey(), loginFormDTO.getCaptcha())
+                && encryptedPassword.equals(user.getPassword());
+
+        if (loginSuccess) {
+
+            // 登录成功，清空失败计数
+            stringRedisTemplate.delete(failKey);
 
             // 生成JWT token
             Map<String, Object> claims = new HashMap<>();
@@ -105,11 +121,30 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             userLoginVO.setAccessToken(token);
             userLoginVO.setLastLoginTime(LocalDateTime.now());
 
+
             log.info("用户登录成功：{}", user.getUsername());
+
             return Result.success(userLoginVO);
         } else {
+            recordLoginFail(failKey);
             return error("密码错误或验证码错误，请重试", null);
         }
+    }
+
+    /**
+     * 记录一次登录失败。
+     *
+     * <p>只在首次失败（increment 返回 1）时设置过期时间。如果每次都 expire，
+     * 攻击者一直重试就能不断续期，计数永远不会自然解封。
+     *
+     * @param failKey 失败计数 key
+     */
+    private void recordLoginFail(String failKey) {
+        Long times = stringRedisTemplate.opsForValue().increment(failKey);
+        if (times != null && times == 1L) {
+            stringRedisTemplate.expire(failKey, LOGIN_FAIL_EXPIRE, TimeUnit.MINUTES);
+        }
+        log.warn("登录失败，累计次数：{}", times);
     }
 
 
@@ -140,6 +175,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      **/
     private Result<Void> handlerRegister(@RequestBody LoginFormDTO loginFormDTO){
         // 2.2 用户不存在，执行注册
+        String failKey = LOGIN_FAIL_TIMES + loginFormDTO.getUsername();
+        String failCountStr = stringRedisTemplate.opsForValue().get(failKey);
+        int failTimes = failCountStr == null ? 0 : Integer.parseInt(failCountStr);
+        if (failTimes >= LOGIN_FAIL_MAX) {
+            log.warn("用户 {} 注册失败次数过多，已临时锁定", loginFormDTO.getUsername());
+            return error("失败次数过多，请 " + LOGIN_FAIL_EXPIRE + " 分钟后再试", null);
+        }
+
+        // 先做不消耗验证码的本地校验，避免用户填错格式还白白浪费一个验证码
         // 验证密码一致性
         if (loginFormDTO.getPassword()!=null&&!loginFormDTO.getPassword().equals(loginFormDTO.getRePassword())) {
             return error("密码为空或不一致", null);
@@ -148,6 +192,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         // 验证手机号格式
         if (RegexUtils.isPhoneInvalid(loginFormDTO.getPhone())) {
             return error("手机号格式错误", null);
+        }
+
+        // 注册同样要校验验证码：否则登录接口被验证码保护，注册接口却可以裸奔过去
+        if (!isCaptchaValid(loginFormDTO.getCaptchaKey(), loginFormDTO.getCaptcha())) {
+            recordLoginFail(failKey);
+            return error("验证码错误，请重试", null);
         }
 
         // 执行注册
@@ -171,21 +221,19 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if(captchaKey==null||userInput==null){
             return false;
         }
-        // 获取Redis中的验证码
-        String redisCaptcha = stringRedisTemplate.opsForValue().get(CAPTCHA_PREFIX + captchaKey);
-        // 验证码不存在或过期
+        // 注意：captchaKey 是前端回传的纯 uuid，前缀在这里拼，不要两头都拼
+        String key = CAPTCHA_PREFIX + captchaKey;
+
+        // 一次性凭证：原子地「取出并删除」，底层是 Redis 6.2 的 GETDEL
+        // 不能写成 get() 再 delete()：两次往返之间，并发请求会读到同一个验证码，都通过校验
+        String redisCaptcha = stringRedisTemplate.opsForValue().getAndDelete(key);
+
+        // 验证码不存在或已过期（也包含已被别人消费掉的情况）
         if (redisCaptcha == null) {
             return false;
         }
 
-        boolean isValid = redisCaptcha.equalsIgnoreCase(userInput);
-
-        // 验证成功后删除验证码（一次性使用）
-        if (isValid) {
-            stringRedisTemplate.delete(CAPTCHA_PREFIX + captchaKey);
-        }
-
-        return isValid;
+        return redisCaptcha.equalsIgnoreCase(userInput);
     }
 
     /**
